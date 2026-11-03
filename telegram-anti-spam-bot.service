@@ -1,0 +1,26 @@
+# Consumers: systemd on the host that runs the bot (install steps: README.md).
+[Unit]
+Description=Telegram anti-spam bot
+After=network-online.target
+Wants=network-online.target
+# 5 crashes in 10 min (e.g. revoked token) -> unit "failed"; set OnFailure below to get alerted
+StartLimitIntervalSec=600
+StartLimitBurst=5
+# OnFailure=<your alert unit>@%n.service
+
+[Service]
+WorkingDirectory=/opt/telegram-anti-spam-bot
+EnvironmentFile=/opt/telegram-anti-spam-bot/.env
+Environment=DB_PATH=/var/lib/telegram-anti-spam-bot/strikes.db
+ExecStart=/opt/telegram-anti-spam-bot/.venv/bin/python bot.py
+Restart=always
+RestartSec=10
+DynamicUser=yes
+StateDirectory=telegram-anti-spam-bot
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

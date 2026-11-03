@@ -1,0 +1,1 @@
+anthropic>=0.84  # only used by the optional AI stage

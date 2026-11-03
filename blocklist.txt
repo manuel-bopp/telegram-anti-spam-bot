@@ -1,0 +1,7 @@
+# Consumers: bot.py (load_patterns). Hit = delete + strike, no second opinion.
+# One pattern per line, whole-word, case-insensitive, '*' = any characters except space,
+# a space also matches no space ("2.800€"). Chinese text is caught by script detection in bot.py.
+# From the group's Rose blocklist (2026-11-03). Only entries that never occur in normal chat stay
+# here; everything else from that list is in suspicious.txt (AI decides), '@*' is dropped.
+vergütung von bis zu 2.800 €
+gehalt: 2.400 € pro monat
