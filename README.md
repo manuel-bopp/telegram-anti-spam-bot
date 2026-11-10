@@ -1,7 +1,7 @@
 # Telegram Anti-Spam-Bot
 
 Created: 2026-11-03 15:50 · claude-opus-5-5 · direct
-Last updated: 2026-11-10 17:32 · claude-opus-5-5
+Last updated: 2026-11-10 17:30 · claude-opus-5-5
 
 Kleiner Bot, der Spam in Telegram-Gruppen löscht und Wiederholungstäter bannt. Gebaut für eine
 Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt.
@@ -17,8 +17,9 @@ Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt
 2. **Stufe 2, KI** (nur wenn `ANTHROPIC_API_KEY` gesetzt ist): Nur die *unsicheren*
    Nachrichten gehen an Claude Haiku, das mit SPAM oder OK antwortet. Ohne Schlüssel bleiben
    unsichere Nachrichten stehen. An die KI geht nur der Nachrichtentext, kein Name, keine ID.
-3. Spam wird gelöscht und der Absender bekommt eine Verwarnung. Bei der 2. Verwarnung
-   (`STRIKES_TO_BAN`) wird er dauerhaft gebannt. Seine älteren Nachrichten, die nicht als Spam
+3. Spam wird gelöscht und der Bot zählt beim Absender eine Verwarnung mit. Der Absender erfährt
+   davon nichts, der Zähler ist nur intern. Bei der 2. Verwarnung (`STRIKES_TO_BAN`) wird er
+   dauerhaft gebannt. Seine älteren Nachrichten, die nicht als Spam
    erkannt wurden, bleiben stehen. Admins und Bots werden nie angefasst.
 4. In der Gruppe selbst schreibt der Bot nichts, der Spam verschwindet einfach. Jede Aktion geht
    als kurze Meldung an `REPORT_CHAT_ID`: entweder an einen Admin direkt oder, besser, in eine
