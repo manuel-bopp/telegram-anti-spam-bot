@@ -36,6 +36,10 @@ aufgehoben, der Bot postet den Text neu in die Gruppe, denn Telegram kann Gelös
 wiederherstellen) und **⛔ Block User** (sofort dauerhaft sperren). Jeder in der Meldungs-Gruppe
 darf tippen.
 
+**Bio-Prüfung beim Beitritt:** Steht in der Bio eines neuen Mitglieds chinesische oder kyrillische
+Schrift oder ein Wort aus der Blockliste (Links allein zählen nicht), sperrt der Bot es sofort und
+still. In der Meldungs-Gruppe kommt eine Karte mit **✅ Confirm** und **↩️ Revert** (entsperren).
+
 **Beitritts-Captcha** (`CAPTCHA_MINUTES`, z. B. 5; 0 = aus): Neue Mitglieder sind stumm, bis sie
 unter der Begrüßung des Bots auf **✅ Ich bin kein Bot** tippen. Wer das nicht in der Zeit schafft,
 wird entfernt und kann neu beitreten. Begrüßung und Beitrittszeile löscht der Bot danach wieder.
