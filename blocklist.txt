@@ -51,6 +51,23 @@ schufa*
 passives einkommen
 nebenverdienst
 geld verdienen
+# money, English
+loan
+loans
+investment*
+make money
+earn money
+earn $*
+passive income
+work from home
+get rich
+giveaway
+airdrop
+# money, German
+schnelles geld
+geld sofort
+pro tag verdienen
+job von zu hause
 
 # drugs
 drogen*
@@ -72,6 +89,11 @@ marijuana
 weed
 haschisch
 gras kaufen
+drugs
+pills
+xanax
+oxy*
+fentanyl
 
 # weapons
 waffen kaufen
@@ -84,6 +106,9 @@ ak47
 ak-47
 guns
 firearms
+pistol*
+ammo
+weapons for sale
 
 # violence (plain "gewalt" stays out: "Kontrolleure wurden gewalttätig" is a real warning)
 gore
@@ -92,6 +117,7 @@ umbringen
 abstechen
 kill yourself
 kys
+kill you
 
 # porn
 porn*
@@ -105,3 +131,6 @@ sexchat
 sex chat
 sexdate*
 18+
+sex video*
+hot girls
+hookup*

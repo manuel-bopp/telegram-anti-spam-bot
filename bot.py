@@ -3,7 +3,7 @@
 
 Consumers: telegram-anti-spam-bot.service (systemd, runs main()), test_bot.py (imports classify()).
 
-Stage 1: rules (Chinese-script ratio, blocklist.txt = spam, suspicious.txt + Cyrillic = unsure).
+Stage 1: rules (Chinese or Cyrillic script ratio, blocklist.txt = spam; suspicious.txt, Chinese display name = unsure).
 Stage 2: messages stage 1 is unsure about go to Claude Haiku, only if ANTHROPIC_API_KEY is set.
 Spam is deleted; after STRIKES_TO_BAN deletions the sender is banned.
 Every action is a short card in REPORT_CHAT_ID. Live: buttons Confirm / Revert (unban, strike back,
@@ -90,7 +90,7 @@ def classify(text, name=""):
             return "spam", f"Blockliste: {raw}"
     cyr = len(CYRILLIC.findall(clean))
     if cyr >= 5 and cyr >= 0.5 * letters:
-        return "unsure", "kyrillische Schrift"
+        return "spam", "kyrillische Schrift"
     for raw, rx in SOFT:
         if rx.search(clean):
             return "unsure", f"verdächtig: {raw}"

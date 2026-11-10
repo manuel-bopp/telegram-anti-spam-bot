@@ -22,8 +22,10 @@ CASES = [
     ("Meine OnlyFans: hot pics 🔞", "Lisa", "spam"),
     ("Krypto-Trading mit 300% Gewinn", "Max", "spam"),
     # unsure: AI decides (left standing without a key)
-    ("Привет всем, кто едет сегодня в центр?", "Olga", "unsure"),
+    ("Привет всем, кто едет сегодня в центр?", "Olga", "spam"),  # Cyrillic script (Manu)
     ("Hallo zusammen", "王伟", "unsure"),
+    ("Work from home and earn $500 a day", "Kate", "spam"),
+    ("Hot girls near you, hookup tonight", "Kate", "spam"),
     # normal chat must stay
     ("Kontrolle U14 Hauptbahnhof Richtung Remseck", "Tom", "ok"),
     ("@Peter danke dir!", "Anna", "ok"),
@@ -33,6 +35,7 @@ CASES = [
     ("Waffenverbotszone am Hbf, Polizei kontrolliert", "Tom", "ok"),
     ("Eine Frau wurde in der U2 sexuell belästigt", "Anna", "ok"),
     ("Gras am Schlossplatz ist frisch gemäht", "Anna", "ok"),
+    ("Ticket inspectors at Hauptbahnhof, be careful", "Tom", "ok"),
     ("", "沐荞", "ok"),
 ]
 

@@ -9,11 +9,11 @@ Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt
 ## Was er macht
 
 1. **Stufe 1, Regeln** (`bot.py`, `classify()`):
-   - Nachricht mehr als zur Hälfte in chinesischer Schrift: Spam.
+   - Nachricht mehr als zur Hälfte in chinesischer oder kyrillischer Schrift: Spam.
    - Treffer in `blocklist.txt`: Spam. Drin sind die komplette bisherige Rose-Liste (Kredit,
      impfen, Bitcoin, оплата, Links mit `http`/`www`/`t.me`, `$` …) und dazu Jobangebote, Krypto,
-     Drogen, Waffen, Gewalt und Porno.
-   - Treffer in `suspicious.txt` (derzeit leer), kyrillische Schrift, chinesischer Anzeigename:
+     Drogen, Waffen, Gewalt und Porno, jeweils auf Deutsch und Englisch.
+   - Treffer in `suspicious.txt` (derzeit leer), chinesischer Anzeigename:
      *unsicher*.
 2. **Stufe 2, KI** (nur wenn `ANTHROPIC_API_KEY` gesetzt ist): Nur die *unsicheren*
    Nachrichten gehen an Claude Haiku, das mit SPAM oder OK antwortet. Ohne Schlüssel bleiben
