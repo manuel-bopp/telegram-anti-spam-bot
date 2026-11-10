@@ -9,21 +9,30 @@ CASES = [
     ("全新国行水果手机 假1赔10  @jhvip0", "Ainalic Vale", "spam"),
     ("Vergütung von bis zu 2.800 € im Monat, schreib mir", "Lena", "spam"),
     ("Vergütung von bis zu 2.800€, schreib mir", "Lena", "spam"),  # no space before €
-    ("Пишите в личку, оплата сразу", "Olga", "unsure"),  # Cyrillic: AI decides
-    # unsure: AI decides
-    ("Jetzt in Bitcoin investieren!", "Max", "unsure"),
-    ("Ich geh morgen impfen, kommt wer mit?", "Anna", "unsure"),
-    ("➡ Mehr Infos hier", "Max", "unsure"),  # without the emoji variation selector
-    ("Mehr Infos⬇️", "Max", "unsure"),  # emoji glued to a word
+    ("Пишите в личку, оплата сразу", "Olga", "spam"),  # Rose words оплата / пишите
+    # Rose list + categories (blocklist.txt since 2026-11-10): deleted
+    ("Jetzt in Bitcoin investieren!", "Max", "spam"),
+    ("Ich geh morgen impfen, kommt wer mit?", "Anna", "spam"),  # Rose deleted this too
+    ("➡ Mehr Infos hier", "Max", "spam"),  # without the emoji variation selector
+    ("Mehr Infos⬇️", "Max", "spam"),  # emoji glued to a word
+    ("Artikel dazu: https://www.stuttgarter-zeitung.de/kontrollen", "Tom", "spam"),  # Rose: http*
+    ("Schau mal t.me/irgendwas", "Tom", "spam"),
+    ("Kokain und Gras, schreib mir privat", "Max", "spam"),
+    ("Pistole zu verkaufen, Munition dabei", "Max", "spam"),
+    ("Meine OnlyFans: hot pics 🔞", "Lisa", "spam"),
+    ("Krypto-Trading mit 300% Gewinn", "Max", "spam"),
+    # unsure: AI decides (left standing without a key)
     ("Привет всем, кто едет сегодня в центр?", "Olga", "unsure"),
-    ("Artikel dazu: https://www.stuttgarter-zeitung.de/kontrollen", "Tom", "unsure"),
-    ("Schau mal t.me/irgendwas", "Tom", "unsure"),
     ("Hallo zusammen", "王伟", "unsure"),
     # normal chat must stay
     ("Kontrolle U14 Hauptbahnhof Richtung Remseck", "Tom", "ok"),
     ("@Peter danke dir!", "Anna", "ok"),
     ("Hab mir einen Trademark-Kurs angeschaut", "Anna", "ok"),
     ("Kreditkarte geht am Automaten nicht", "Anna", "ok"),
+    ("Kontrolleure waren gewalttätig, Polizei ist da", "Tom", "ok"),
+    ("Waffenverbotszone am Hbf, Polizei kontrolliert", "Tom", "ok"),
+    ("Eine Frau wurde in der U2 sexuell belästigt", "Anna", "ok"),
+    ("Gras am Schlossplatz ist frisch gemäht", "Anna", "ok"),
     ("", "沐荞", "ok"),
 ]
 

@@ -1,28 +1,4 @@
 # Consumers: bot.py (load_patterns). Hit = "unsure": only deleted if the AI stage (Claude Haiku)
 # also says spam. Without ANTHROPIC_API_KEY these messages stay. Same syntax as blocklist.txt.
-# Words from the group's Rose blocklist that also appear in normal chat:
-investieren
-darlehen
-bitcoin
-trading
-binary
-credit
-invest
-kredit
-trader
-trade
-impf*
-➡️
-⬇️
-🔞
-оплата
-пишите
-*到*
-*收*
-*款*
-*签*
-# links and prices
-t.me/*
-http*
-www*
-*$*
+# Empty since 2026-11-10: the Rose words moved to blocklist.txt (Manu). Cyrillic script and
+# Chinese display names stay "unsure" in bot.py itself.
