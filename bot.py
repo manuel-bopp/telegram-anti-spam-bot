@@ -9,7 +9,9 @@ Spam is deleted; after STRIKES_TO_BAN deletions the sender is banned.
 Every action is a short card in REPORT_CHAT_ID. Live: buttons Confirm / Revert (unban, strike back,
 the bot re-posts the text) / Block User. Test mode (DRY_RUN=1): nothing is deleted on its own, the
 card has "Löschen" (same delete/strike/ban as live mode) and "Nicht löschen".
-Join captcha (CAPTCHA_MINUTES > 0): a new member is muted until they tap "Ich bin kein Bot" under
+Bio check on join: Chinese or Cyrillic script or a blocklist word (links ignored) in a new member's
+bio = banned at once, silently, card with Confirm / Revert (unban) in REPORT_CHAT_ID.
+Join captcha (CAPTCHA_MINUTES > 0, off since Manu 2026-11-10): a new member is muted until they tap "Ich bin kein Bot" under
 the bot's greeting; no tap in time = removed (may rejoin). Pending joins live in SQLite.
 In REPORT_CHAT_ID: /blocklist, /block <muster>, /unblock <muster> (extra patterns, kept next to DB_PATH).
 The only thing written to disk is (chat_id, user_id, strike count) in SQLite.
@@ -248,8 +250,54 @@ def revert(db, chat_id, uid, card):
 MUTED = {"can_send_messages": False}
 
 
+LINK = re.compile(r"\S*(?:t\.me/|telegram\.(?:me|dog)/|https?://|www\.)\S*", re.IGNORECASE)
+_joined = set()  # (chat, user) already checked: a join message and its chat_member update arrive both
+
+
+def bio_reason(bio):
+    """Why a bio looks like a spam account, or "". Links alone do not count (Manu)."""
+    bio = LINK.sub(" ", bio.replace("\ufe0f", ""))
+    if len(HAN.findall(bio)) >= 2:
+        return "chinesische Schrift in der Bio"
+    if len(CYRILLIC.findall(bio)) >= 3:
+        return "kyrillische Schrift in der Bio"
+    hit = next((raw for raw, rx in HARD if rx.search(bio)), None)
+    return f"Bio: {hit}" if hit else ""
+
+
 def on_join(db, chat_id, user, join_msg_id=None):
-    """Mute a new member and greet them with the captcha button. Called for join messages and chat_member updates."""
+    """A new member: suspicious bio = ban at once and report; else the captcha if switched on."""
+    uid = user["id"]
+    if user.get("is_bot") or (chat_id, uid) in _joined:
+        return
+    _joined.add((chat_id, uid))
+    try:
+        bio = tg("getChat", chat_id=uid).get("bio") or ""
+    except urllib.error.HTTPError as e:
+        log.warning("Bio nicht lesbar für user %s: %s", uid, tg_error(e))
+        bio = ""
+    reason = bio_reason(bio)
+    if reason:
+        err = ban(db, chat_id, uid)
+        if join_msg_id:
+            try:
+                tg("deleteMessage", chat_id=chat_id, message_id=join_msg_id)
+            except urllib.error.HTTPError:
+                pass
+        name = " ".join(filter(None, [user.get("first_name"), user.get("last_name")]))
+        who = f"{name} (ID {uid}" + (f", @{user['username']}" if user.get("username") else "") + ")"
+        key = f"{chat_id}:0:{uid}"
+        report(f"⚠️ Beitritt erkannt, Sperren fehlgeschlagen: {err}" if err else "Beitritt gesperrt (verdächtige Bio)",
+               who, reason, bio, uid,
+               None if err else [{"text": "✅ Confirm", "callback_data": f"c:{key}"},
+                                 {"text": "↩️ Revert", "callback_data": f"u:{key}"}])
+        return
+    if CAPTCHA_MINUTES:
+        captcha_join(db, chat_id, user, join_msg_id)
+
+
+def captcha_join(db, chat_id, user, join_msg_id=None):
+    """Mute a new member and greet them with the captcha button."""
     uid = user["id"]
     if user.get("is_bot") or db.execute("SELECT 1 FROM pending WHERE chat_id = ? AND user_id = ?", (chat_id, uid)).fetchone():
         return
@@ -314,7 +362,7 @@ def sweep_captchas(db):
 def on_member(db, upd):
     """chat_member update: catches joins even when the group hides join messages."""
     old, new = upd["old_chat_member"]["status"], upd["new_chat_member"]["status"]
-    if CAPTCHA_MINUTES and new == "member" and old in ("left", "kicked") and upd["chat"]["id"] in ALLOWED_CHATS:
+    if new == "member" and old in ("left", "kicked") and upd["chat"]["id"] in ALLOWED_CHATS:
         on_join(db, upd["chat"]["id"], upd["new_chat_member"]["user"])
 
 
@@ -340,6 +388,13 @@ def on_button(db, cq):
         out = "✅ Bestätigt"
     elif action == "r":
         out = revert(db, chat_id, uid, card)
+    elif action == "u":
+        try:
+            tg("unbanChatMember", chat_id=chat_id, user_id=uid, only_if_banned=True)
+            _banned.pop((chat_id, uid), None)
+            out = "↩️ Entsperrt, kann wieder beitreten"
+        except urllib.error.HTTPError as e:
+            out = f"⚠️ Entsperren fehlgeschlagen: {tg_error(e)}"
     elif action == "b":
         err = ban(db, chat_id, uid)
         out = f"⚠️ Sperren fehlgeschlagen: {err}" if err else "⛔ Absender gesperrt"
@@ -398,7 +453,7 @@ def handle(db, msg):
         return
     if ALLOWED_CHATS and chat["id"] not in ALLOWED_CHATS:
         return
-    if CAPTCHA_MINUTES and msg.get("new_chat_members"):
+    if msg.get("new_chat_members"):
         for member in msg["new_chat_members"]:
             on_join(db, chat["id"], member, msg["message_id"])
         return

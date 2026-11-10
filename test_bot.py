@@ -133,7 +133,7 @@ bot.CAPTCHA_MINUTES, bot.ALLOWED_CHATS = 5, {-100}
 db.execute("CREATE TABLE pending (chat_id INTEGER, user_id INTEGER, msg_id INTEGER, deadline REAL, PRIMARY KEY (chat_id, user_id))")
 bot.tg = lambda method, **p: sent.append((method, p)) or ({"message_id": 50} if method == "sendMessage" else {"permissions": {"can_send_messages": True}} if method == "getChat" else True)
 sent.clear(); bot.handle(db, {"chat": group, "from": {"id": 7}, "message_id": 20, "new_chat_members": [{"id": 7, "first_name": "Neu"}]})
-greeted = [m for m, _ in sent] == ["restrictChatMember", "deleteMessage", "sendMessage"] and sent[0][1]["permissions"] == {"can_send_messages": False}
+greeted = [m for m, _ in sent] == ["getChat", "restrictChatMember", "deleteMessage", "sendMessage"] and sent[1][1]["permissions"] == {"can_send_messages": False}
 captcha = sent[-1][1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
 sent.clear(); bot.on_button(db, {"id": "q", "from": {"id": 8}, "message": {"chat": group}, "data": captcha})
 foreign = [m for m, _ in sent] == ["answerCallbackQuery"]
@@ -149,4 +149,25 @@ if not (greeted and foreign and solved and kicked):
     print(f"FAIL captcha: greeted={greeted} foreign={foreign} solved={solved} kicked={kicked}")
 else:
     print("captcha ok")
+# bio check on join: Chinese bio = banned + card with Confirm / Revert (unban); a link-only bio passes
+bot.CAPTCHA_MINUTES = 0
+bios = {20: "https://t.me/+Dtsd7iG1ohExMGFl 有码进群私信老板了解 日入八千", 21: "https://t.me/meinkanal Fotografie", 22: "Привет, пишите мне"}
+bot.tg = lambda method, **p: sent.append((method, p)) or ({"bio": bios.get(p.get("chat_id"), "")} if method == "getChat" else True)
+sent.clear(); bot.handle(db, {"chat": group, "from": {"id": 20}, "message_id": 30, "new_chat_members": [{"id": 20, "first_name": "Tonia"}]})
+methods = [m for m, _ in sent]
+bio_card = sent[-1][1] if sent else {}
+bio_banned = methods[:2] == ["getChat", "banChatMember"] and "deleteMessage" in methods \
+    and [b["callback_data"] for b in bio_card["reply_markup"]["inline_keyboard"][0]] == ["c:-100:0:20", "u:-100:0:20"]
+sent.clear(); bot.on_member(db, {"chat": group, "old_chat_member": {"status": "left"}, "new_chat_member": {"status": "member", "user": {"id": 20}}})
+once = sent == []
+sent.clear(); bot.on_member(db, {"chat": group, "old_chat_member": {"status": "left"}, "new_chat_member": {"status": "member", "user": {"id": 21}}})
+link_ok = [m for m, _ in sent] == ["getChat"]
+cyr = bot.bio_reason(bios[22]) == "kyrillische Schrift in der Bio"
+sent.clear(); tap("u:-100:0:20")
+unbanned = ("unbanChatMember", {"chat_id": -100, "user_id": 20, "only_if_banned": True}) in sent
+if not (bio_banned and once and link_ok and cyr and unbanned):
+    failed += 1
+    print(f"FAIL bio: banned={bio_banned} once={once} link_ok={link_ok} cyr={cyr} unbanned={unbanned}")
+else:
+    print("bio ok")
 raise SystemExit(1 if failed else 0)
