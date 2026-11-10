@@ -6,11 +6,14 @@ Consumers: telegram-anti-spam-bot.service (systemd, runs main()), test_bot.py (i
 Stage 1: rules (Chinese-script ratio, blocklist.txt = spam, suspicious.txt + Cyrillic = unsure).
 Stage 2: messages stage 1 is unsure about go to Claude Haiku, only if ANTHROPIC_API_KEY is set.
 Spam is deleted; after STRIKES_TO_BAN deletions the sender is banned.
-Test mode (DRY_RUN=1): nothing is deleted on its own; the report in REPORT_CHAT_ID carries two
-buttons, "Löschen" (same delete/strike/ban as live mode) and "Nicht löschen".
+Every action is a short card in REPORT_CHAT_ID. Live: buttons Confirm / Revert (unban, strike back,
+the bot re-posts the text) / Block User. Test mode (DRY_RUN=1): nothing is deleted on its own, the
+card has "Löschen" (same delete/strike/ban as live mode) and "Nicht löschen".
+In REPORT_CHAT_ID: /blocklist, /block <muster>, /unblock <muster> (extra patterns, kept next to DB_PATH).
 The only thing written to disk is (chat_id, user_id, strike count) in SQLite.
 Telegram's Bot API has no method to list a group's members, so this bot cannot export one.
 """
+import html
 import json
 import logging
 import os
@@ -55,7 +58,15 @@ def load_patterns(path):
     return patterns
 
 
-HARD = load_patterns(HERE / "blocklist.txt")
+EXTRA_PATH = Path(DB_PATH).with_name("blocklist-extra.txt")  # written by /block, beside the DB (writable)
+
+
+def load_hard():
+    global HARD
+    HARD = load_patterns(HERE / "blocklist.txt") + (load_patterns(EXTRA_PATH) if EXTRA_PATH.exists() else [])
+
+
+load_hard()
 SOFT = load_patterns(HERE / "suspicious.txt")
 
 
@@ -133,15 +144,27 @@ def tg_error(e):
         return str(e)
 
 
-def report(text, user_id="", buttons=None):
+def esc(s):
+    return html.escape(str(s), quote=False)
+
+
+def report(head, who, reason, text, user_id="", buttons=None):
+    """One compact card: bold headline, sender, reason, message excerpt; optional button row."""
     # journal gets the headline and user ID only; names and message text go to the admin alone
-    log.info("%s (user %s)", text.splitlines()[0], user_id)
-    if REPORT_CHAT_ID:
-        extra = {"reply_markup": {"inline_keyboard": [buttons]}} if buttons else {}
-        try:
-            tg("sendMessage", chat_id=REPORT_CHAT_ID, text=text, link_preview_options={"is_disabled": True}, **extra)
-        except (urllib.error.URLError, OSError) as e:
-            log.warning("Meldung an REPORT_CHAT_ID fehlgeschlagen: %s", e)
+    log.info("%s (user %s)", head, user_id)
+    if not REPORT_CHAT_ID:
+        return
+    card = f"<b>{esc(head)}</b>\n👤 {esc(who)}\n🔎 Reason: {esc(reason)}\n💬 {esc(text[:300])}"
+    extra = {"reply_markup": {"inline_keyboard": [buttons]}} if buttons else {}
+    try:
+        tg("sendMessage", chat_id=REPORT_CHAT_ID, text=card, parse_mode="HTML",
+           link_preview_options={"is_disabled": True}, **extra)
+    except (urllib.error.URLError, OSError) as e:
+        log.warning("Meldung an REPORT_CHAT_ID fehlgeschlagen: %s", e)
+
+
+def say(text):
+    tg("sendMessage", chat_id=REPORT_CHAT_ID, text=text, link_preview_options={"is_disabled": True})
 
 
 _admins = {}
@@ -168,36 +191,59 @@ def add_strike(db, chat_id, user_id):
     return db.execute("SELECT count FROM strikes WHERE chat_id = ? AND user_id = ?", (chat_id, user_id)).fetchone()[0]
 
 
+def ban(db, chat_id, uid):
+    """Ban for good and reset the strikes, so a user the admin unbans starts from zero. None = ok."""
+    try:
+        tg("banChatMember", chat_id=chat_id, user_id=uid)
+    except urllib.error.HTTPError as e:
+        return f"{tg_error(e)} (hat der Bot das Admin-Recht „Nutzer sperren“?)"
+    _banned[(chat_id, uid)] = time.time()
+    db.execute("DELETE FROM strikes WHERE chat_id = ? AND user_id = ?", (chat_id, uid))
+    db.commit()
+    return None
+
+
 def enforce(db, chat_id, uid, message_id):
-    """Delete, strike, ban on STRIKES_TO_BAN. Returns the outcome line, None for a post-ban burst or a repeat."""
+    """Delete, strike, ban on STRIKES_TO_BAN. Returns the headline, None for a post-ban burst or a repeat."""
     if (chat_id, message_id) in _enforced:  # e.g. a message and its edit in one update batch
         return None
     try:
         tg("deleteMessage", chat_id=chat_id, message_id=message_id)
     except urllib.error.HTTPError as e:
         err = tg_error(e)
-        if "not found" not in err:  # already gone (Rose, a human admin): still spam, still a strike
-            return f"⚠️ Löschen fehlgeschlagen: {err}\nHat der Bot das Admin-Recht „Nachrichten löschen“? (Telegram erlaubt es nur 48 h lang)"
+        if "not found" not in err:  # already gone (another bot, a human admin): still spam, still a strike
+            return f"⚠️ Löschen fehlgeschlagen: {err} (Recht „Nachrichten löschen“? nur 48 h möglich)"
     _enforced.add((chat_id, message_id))
     if time.time() - _banned.get((chat_id, uid), 0) < 300:  # burst sent before the ban took effect: delete, don't re-strike
         return None
     # ponytail: strikes never expire; add a time window if regulars ever get banned for old strikes
     strikes = add_strike(db, chat_id, uid)
     if strikes < STRIKES_TO_BAN:
-        return f"🗑️ Gelöscht, Verwarnung {strikes}/{STRIKES_TO_BAN}"
+        return f"Spam gelöscht (Verwarnung {strikes}/{STRIKES_TO_BAN})"
+    err = ban(db, chat_id, uid)
+    return f"⚠️ Spam gelöscht, Sperren fehlgeschlagen: {err}" if err else "Spam gelöscht, Absender gesperrt"
+
+
+def revert(db, chat_id, uid, card):
+    """Undo a deletion: unban, take the strike back, re-post the text from the card (Telegram cannot restore it)."""
     try:
-        tg("banChatMember", chat_id=chat_id, user_id=uid)
+        tg("unbanChatMember", chat_id=chat_id, user_id=uid, only_if_banned=True)
     except urllib.error.HTTPError as e:
-        return f"⚠️ Gelöscht, aber Bann fehlgeschlagen: {tg_error(e)}\nHat der Bot das Admin-Recht „Nutzer sperren“?"
-    # reset, so a user the admin unbans starts from zero
-    _banned[(chat_id, uid)] = time.time()
-    db.execute("DELETE FROM strikes WHERE chat_id = ? AND user_id = ?", (chat_id, uid))
+        return f"⚠️ Entsperren fehlgeschlagen: {tg_error(e)}"
+    _banned.pop((chat_id, uid), None)
+    db.execute("UPDATE strikes SET count = count - 1 WHERE chat_id = ? AND user_id = ?", (chat_id, uid))
+    db.execute("DELETE FROM strikes WHERE count <= 0")
     db.commit()
-    return f"⛔ Gelöscht und dauerhaft gebannt ({strikes}. Verstoß)"
+    name = next((l[2:].split(" (ID")[0] for l in card.splitlines() if l.startswith("👤 ")), "?")
+    body = card.split("💬 ", 1)[1] if "💬 " in card else ""
+    # ponytail: the card holds at most 300 characters of the message, so that is what comes back
+    tg("sendMessage", chat_id=chat_id, text=f"↩️ Vom Anti-Spam-Bot zu Unrecht gelöscht. {name} schrieb:\n{body}",
+       link_preview_options={"is_disabled": True})
+    return "↩️ Rückgängig gemacht (entsperrt, Nachricht neu gepostet)"
 
 
 def on_button(db, cq):
-    """A tap on "Löschen" / "Nicht löschen" under a test-mode report."""
+    """A tap under a card: live c/r/b (Confirm, Revert, Block User), test mode d/k (Löschen, Nicht löschen)."""
     m = cq.get("message") or {}
     try:
         tg("answerCallbackQuery", callback_query_id=cq["id"])
@@ -211,16 +257,51 @@ def on_button(db, cq):
     if ALLOWED_CHATS and chat_id not in ALLOWED_CHATS:
         return
     who = cq["from"].get("first_name", "?")
-    if (chat_id, msg_id) in _enforced:
+    card = m.get("text", "")
+    if action == "c":
+        out = "✅ Bestätigt"
+    elif action == "r":
+        out = revert(db, chat_id, uid, card)
+    elif action == "b":
+        err = ban(db, chat_id, uid)
+        out = f"⚠️ Sperren fehlgeschlagen: {err}" if err else "⛔ Absender gesperrt"
+    elif (chat_id, msg_id) in _enforced:
         out = "🗑️ Schon gelöscht"
     elif action == "d":
         out = enforce(db, chat_id, uid, msg_id) or "🗑️ Gelöscht"
     else:
         out = "✅ Bleibt stehen"
-    log.info("Knopf %s von user %s: %s (user %s)", action, cq["from"]["id"], out.splitlines()[0], uid)
+    log.info("Knopf %s von user %s: %s (user %s)", action, cq["from"]["id"], out, uid)
+    head, _, rest = card.partition("\n")
     # editing without reply_markup removes the buttons, so nobody taps twice
-    tg("editMessageText", chat_id=m["chat"]["id"], message_id=m["message_id"],
-       text=f"{m.get('text', '')}\n\n{out} ({who})", link_preview_options={"is_disabled": True})
+    tg("editMessageText", chat_id=m["chat"]["id"], message_id=m["message_id"], parse_mode="HTML",
+       text=f"<b>{esc(head)}</b>\n{esc(rest)}\n\n{esc(out)} ({esc(who)})", link_preview_options={"is_disabled": True})
+
+
+def on_command(text):
+    """/blocklist, /block <muster>, /unblock <muster> in the report chat."""
+    cmd, _, arg = text.partition(" ")
+    cmd, arg = cmd.split("@")[0].lower(), " ".join(arg.split()).lower()
+    extra = EXTRA_PATH.read_text(encoding="utf-8").splitlines() if EXTRA_PATH.exists() else []
+    if cmd == "/blocklist":
+        base = [raw for raw, _ in load_patterns(HERE / "blocklist.txt")]
+        say(f"Feste Liste ({len(base)}): " + ", ".join(base) +
+            f"\n\nPer /block ergänzt ({len(extra)}): " + (", ".join(extra) or "noch nichts") +
+            "\n\n/block <wort> fügt hinzu, /unblock <wort> nimmt es wieder raus. * = beliebige Zeichen, z. B. casino*")
+    elif cmd == "/block" and 0 < len(arg) <= 100:
+        if arg not in extra:
+            EXTRA_PATH.write_text("\n".join(extra + [arg]) + "\n", encoding="utf-8")
+            load_hard()
+        say(f"✅ Gesperrt ab sofort: {arg}")
+    elif cmd == "/unblock" and arg:
+        if arg in extra:
+            EXTRA_PATH.write_text("".join(f"{x}\n" for x in extra if x != arg), encoding="utf-8")
+            load_hard()
+            say(f"✅ Wieder erlaubt: {arg}")
+        else:
+            say(f"„{arg}“ steht nicht in der per /block ergänzten Liste. Die feste Liste ändert Manu.")
+    elif cmd in ("/block", "/unblock", "/help"):
+        say("/blocklist zeigt die Liste, /block <wort> fügt hinzu, /unblock <wort> nimmt es wieder raus.")
 
 
 def handle(db, msg):
@@ -232,6 +313,10 @@ def handle(db, msg):
                text=f"Hallo! Ich bin ein Anti-Spam-Bot. Deine Telegram-ID ist {chat['id']}.")
         return
     if chat["type"] not in ("group", "supergroup"):
+        return
+    if REPORT_CHAT_ID and str(chat["id"]) == REPORT_CHAT_ID:
+        if (msg.get("text") or "").startswith("/"):
+            on_command(msg["text"])
         return
     if ALLOWED_CHATS and chat["id"] not in ALLOWED_CHATS:
         return
@@ -251,17 +336,21 @@ def handle(db, msg):
         reason += ", KI: Spam"
 
     who = f"{name} (ID {user['id']}" + (f", @{user['username']}" if user.get("username") else "") + ")"
-    details = f"👥 {chat.get('title')} (ID {chat['id']})\n👤 {who}\n🔎 {reason}\n💬 {text[:300]}"
     uid = user["id"]
+    key = f"{chat['id']}:{msg['message_id']}:{uid}"  # <= 64 bytes, Telegram's callback_data limit
     log.info("Spam erkannt: chat %s, user %s, %s", chat["id"], uid, reason)
     if DRY_RUN:
-        key = f"{chat['id']}:{msg['message_id']}:{uid}"  # <= 64 bytes, Telegram's callback_data limit
-        report(f"🧪 Testmodus: würde diese Nachricht löschen\n{details}", uid,
+        report("🧪 Testmodus: würde löschen", who, reason, text, uid,
                [{"text": "🗑️ Löschen", "callback_data": f"d:{key}"}, {"text": "✅ Nicht löschen", "callback_data": f"k:{key}"}])
         return
-    out = enforce(db, chat["id"], uid, msg["message_id"])
-    if out:
-        report(f"{out}\n{details}", uid)
+    head = enforce(db, chat["id"], uid, msg["message_id"])
+    if head is None:
+        return
+    buttons = None if head.startswith("⚠️") else [
+        {"text": "✅ Confirm", "callback_data": f"c:{key}"}, {"text": "↩️ Revert", "callback_data": f"r:{key}"}]
+    if buttons and "gesperrt" not in head:
+        buttons.append({"text": "⛔ Block User", "callback_data": f"b:{key}"})
+    report(head, who, reason, text, uid, buttons)
 
 
 def main():

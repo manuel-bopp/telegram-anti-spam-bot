@@ -1,7 +1,7 @@
 # Telegram Anti-Spam-Bot
 
 Created: 2026-11-03 15:50 · claude-opus-5-5 · direct
-Last updated: 2026-11-10 19:20 · claude-opus-5-5
+Last updated: 2026-11-10 19:35 · claude-opus-5-5
 
 Kleiner Bot, der Spam in Telegram-Gruppen löscht und Wiederholungstäter bannt. Gebaut für eine
 Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt.
@@ -30,10 +30,19 @@ Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt
    beginnen mit `-100`, normale Gruppen nur mit `-`). In
    `ALLOWED_CHAT_IDS` gehört nur die zu schützende Gruppe, nie die Admin-Gruppe.
 
+**Meldungen** (in `REPORT_CHAT_ID`): kurz, mit Absender, Grund und Text. Im Normalbetrieb stehen
+darunter drei Knöpfe: **✅ Confirm** (bleibt gelöscht), **↩️ Revert** (Verwarnung zurück, Sperre
+aufgehoben, der Bot postet den Text neu in die Gruppe, denn Telegram kann Gelöschtes nicht
+wiederherstellen) und **⛔ Block User** (sofort dauerhaft sperren). Jeder in der Meldungs-Gruppe
+darf tippen.
+
+**Befehle in der Meldungs-Gruppe:** `/blocklist` zeigt die Liste, `/block <wort>` sperrt ein Wort
+ab sofort, `/unblock <wort>` nimmt es wieder raus (`*` = beliebige Zeichen, z. B. `casino*`). Diese
+Ergänzungen liegen in `blocklist-extra.txt` neben der Datenbank; `blocklist.txt` selbst ändert man im Repo.
+
 **Testmodus** (`DRY_RUN=1`, Standard): löscht nichts von selbst. Unter jeder Meldung stehen
-zwei Knöpfe: **🗑️ Löschen** (löscht, verwarnt und bannt wie im Normalbetrieb) und **✅ Nicht löschen**.
-Jeder in der Meldungs-Gruppe darf tippen. Telegram lässt Bots nur Nachrichten löschen, die
-jünger als 48 Stunden sind.
+**🗑️ Löschen** (wie im Normalbetrieb) und **✅ Nicht löschen**. Telegram lässt Bots nur Nachrichten
+löschen, die jünger als 48 Stunden sind.
 
 ## Was er speichert und was nicht
 

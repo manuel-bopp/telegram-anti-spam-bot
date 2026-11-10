@@ -89,4 +89,43 @@ if buttons != ["d:-100:9:3", "k:-100:9:3"] or not (kept and foreign and deleted)
     print(f"FAIL buttons: {buttons} kept={kept} foreign={foreign} deleted={deleted}")
 else:
     print("buttons ok")
+
+# live: card with Confirm / Revert / Block User; Revert unbans + re-posts, Block bans
+bot.DRY_RUN = False
+sent.clear(); bot.handle(db, dict(spam, **{"from": {"id": 4, "first_name": "Rebekah"}, "message_id": 11}))
+card = sent[-1][1]
+live_buttons = [b["callback_data"] for b in card["reply_markup"]["inline_keyboard"][0]]
+card_ok = card["parse_mode"] == "HTML" and card["text"].startswith("<b>Spam gelöscht (Verwarnung 1/2)</b>") \
+    and live_buttons == ["c:-100:11:4", "r:-100:11:4", "b:-100:11:4"]
+plain = "Spam gelöscht (Verwarnung 1/2)\n👤 Rebekah (ID 4)\n🔎 Reason: chinesische Schrift\n💬 来码洗米 挣八千"
+sent.clear(); tap("r:-100:11:4", dict(report_msg, text=plain))
+reposted = [p for m, p in sent if m == "sendMessage"]
+reverted = [m for m, _ in sent][:2] == ["answerCallbackQuery", "unbanChatMember"] and len(reposted) == 1 \
+    and reposted[0]["chat_id"] == -100 and "Rebekah schrieb:\n来码洗米 挣八千" in reposted[0]["text"] \
+    and db.execute("SELECT COUNT(*) FROM strikes WHERE user_id = 4").fetchone()[0] == 0
+sent.clear(); tap("b:-100:11:4", dict(report_msg, text=plain))
+blocked = ("banChatMember", {"chat_id": -100, "user_id": 4}) in sent and "gesperrt" in sent[-1][1]["text"]
+if not (card_ok and reverted and blocked):
+    failed += 1
+    print(f"FAIL live card: card={card_ok} buttons={live_buttons} revert={reverted} block={blocked}")
+else:
+    print("live card ok")
+
+# /block, /unblock in the report chat; extra patterns live next to the DB
+import tempfile
+from pathlib import Path
+bot.EXTRA_PATH = Path(tempfile.mkdtemp()) / "blocklist-extra.txt"
+admin_chat = {"id": -5, "type": "group"}
+cmd = lambda t: bot.handle(db, {"chat": admin_chat, "from": {"id": 1}, "message_id": 1, "text": t})
+cmd("/block casino*")
+added = bot.classify("Bestes Casinoangebot", "x")[0] == "spam"
+cmd("/unblock casino*")
+removed = bot.classify("Bestes Casinoangebot", "x")[0] == "ok"
+sent.clear(); cmd("/blocklist@freifahren_anti_spam_bot")
+listed = "Feste Liste" in sent[-1][1]["text"]
+if not (added and removed and listed):
+    failed += 1
+    print(f"FAIL commands: added={added} removed={removed} listed={listed}")
+else:
+    print("commands ok")
 raise SystemExit(1 if failed else 0)
