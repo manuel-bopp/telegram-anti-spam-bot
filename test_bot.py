@@ -47,9 +47,10 @@ db.execute("CREATE TABLE strikes (chat_id INTEGER, user_id INTEGER, count INTEGE
 group = {"id": -100, "type": "supergroup"}
 spam = {"chat": group, "from": {"id": 2, "first_name": "沐荞"}, "message_id": 5, "text": "来码洗米 挣八千"}
 bot.handle(db, spam)
-bot.handle(db, spam)
-bot.handle(db, spam)  # burst message after the ban: deleted, no new strike
-bot.handle(db, dict(spam, **{"from": {"id": 1, "first_name": "Admin"}}))
+bot.handle(db, spam)  # the same message again (its edit): no 2nd strike, no API call
+bot.handle(db, dict(spam, message_id=6))
+bot.handle(db, dict(spam, message_id=7))  # burst message after the ban: deleted, no new strike
+bot.handle(db, dict(spam, message_id=8, **{"from": {"id": 1, "first_name": "Admin"}}))
 want = ["getChatAdministrators", "deleteMessage", "deleteMessage", "banChatMember", "deleteMessage"]
 assert db.execute("SELECT COUNT(*) FROM strikes").fetchone()[0] == 0, "strike after ban"
 if calls != want:
