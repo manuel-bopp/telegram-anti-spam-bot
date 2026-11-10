@@ -146,6 +146,9 @@ def report(text, user_id="", buttons=None):
 
 _admins = {}
 _banned = {}  # (chat, user) -> ban time; in memory only, a restart just forgets the burst window
+# (chat, message) already deleted via a button: a 2nd tap, a 2nd admin or the report of an edit never strikes twice
+# ponytail: in memory, grows by a few ids a day; a restart forgets it
+_enforced = set()
 
 
 def is_admin(chat_id, user_id):
@@ -173,6 +176,7 @@ def enforce(db, chat_id, uid, message_id):
         err = tg_error(e)
         if "not found" not in err:  # already gone (Rose, a human admin): still spam, still a strike
             return f"⚠️ Löschen fehlgeschlagen: {err}\nHat der Bot das Admin-Recht „Nachrichten löschen“? (Telegram erlaubt es nur 48 h lang)"
+    _enforced.add((chat_id, message_id))
     if time.time() - _banned.get((chat_id, uid), 0) < 300:  # burst sent before the ban took effect: delete, don't re-strike
         return None
     # ponytail: strikes never expire; add a time window if regulars ever get banned for old strikes
@@ -202,7 +206,12 @@ def on_button(db, cq):
     if ALLOWED_CHATS and chat_id not in ALLOWED_CHATS:
         return
     who = cq["from"].get("first_name", "?")
-    out = (enforce(db, chat_id, uid, msg_id) or "🗑️ Gelöscht") if action == "d" else "✅ Bleibt stehen"
+    if (chat_id, msg_id) in _enforced:
+        out = "🗑️ Schon gelöscht"
+    elif action == "d":
+        out = enforce(db, chat_id, uid, msg_id) or "🗑️ Gelöscht"
+    else:
+        out = "✅ Bleibt stehen"
     log.info("Knopf %s von user %s: %s (user %s)", action, cq["from"]["id"], out.splitlines()[0], uid)
     # editing without reply_markup removes the buttons, so nobody taps twice
     tg("editMessageText", chat_id=m["chat"]["id"], message_id=m["message_id"],

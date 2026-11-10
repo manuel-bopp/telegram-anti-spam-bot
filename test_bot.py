@@ -72,6 +72,8 @@ sent.clear(); tap(buttons[0], dict(report_msg, chat={"id": -6}))
 foreign = [m for m, _ in sent] == ["answerCallbackQuery"]
 sent.clear(); tap(buttons[0])
 deleted = ("deleteMessage", {"chat_id": -100, "message_id": 9}) in sent and "Verwarnung 1/2" in sent[-1][1]["text"]
+sent.clear(); tap(buttons[0]); tap(buttons[1])  # 2nd tap / 2nd admin: no 2nd strike, no "bleibt stehen"
+deleted = deleted and "deleteMessage" not in [m for m, _ in sent] and all("Schon gelöscht" in p["text"] for m, p in sent if m == "editMessageText")
 if buttons != ["d:-100:9:3", "k:-100:9:3"] or not (kept and foreign and deleted):
     failed += 1
     print(f"FAIL buttons: {buttons} kept={kept} foreign={foreign} deleted={deleted}")
