@@ -1,7 +1,7 @@
 # Telegram Anti-Spam-Bot
 
 Created: 2026-11-03 15:50 · claude-opus-5-5 · direct
-Last updated: 2026-11-10 18:42 · claude-opus-5-5
+Last updated: 2026-11-10 18:48 · claude-opus-5-5
 
 Kleiner Bot, der Spam in Telegram-Gruppen löscht und Wiederholungstäter bannt. Gebaut für eine
 Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt.
@@ -25,7 +25,8 @@ Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt
    als kurze Meldung an `REPORT_CHAT_ID` (Ausnahme: Nachrichten, die ein gerade gebannter Absender
    noch nachschiebt, löscht er 5 Minuten lang ohne eigene Meldung): entweder an einen Admin direkt oder, besser, in eine
    eigene Admin-Gruppe (Bot dort als normales Mitglied hinzufügen, keine Rechte nötig). Die
-   Gruppen-ID steht in Telegram Web in der Adresszeile (`web.telegram.org/a/#-100…`). In
+   Gruppen-ID steht in Telegram Web in der Adresszeile (`web.telegram.org/a/#-…`; Supergruppen
+   beginnen mit `-100`, normale Gruppen nur mit `-`). In
    `ALLOWED_CHAT_IDS` gehört nur die zu schützende Gruppe, nie die Admin-Gruppe.
 
 **Testmodus** (`DRY_RUN=1`, Standard): löscht nichts von selbst. Unter jeder Meldung stehen
