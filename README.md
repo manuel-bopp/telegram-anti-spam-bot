@@ -1,7 +1,7 @@
 # Telegram Anti-Spam-Bot
 
 Created: 2026-11-03 15:50 · claude-opus-5-5 · direct
-Last updated: 2026-11-10 17:05 · claude-opus-5-5
+Last updated: 2026-11-10 17:32 · claude-opus-5-5
 
 Kleiner Bot, der Spam in Telegram-Gruppen löscht und Wiederholungstäter bannt. Gebaut für eine
 Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt.
@@ -26,7 +26,10 @@ Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt
    Gruppen-ID steht in Telegram Web in der Adresszeile (`web.telegram.org/a/#-100…`). In
    `ALLOWED_CHAT_IDS` gehört nur die zu schützende Gruppe, nie die Admin-Gruppe.
 
-**Testmodus** (`DRY_RUN=1`, Standard): löscht nichts, meldet nur, was er gelöscht hätte.
+**Testmodus** (`DRY_RUN=1`, Standard): löscht nichts von selbst. Unter jeder Meldung stehen
+zwei Knöpfe: **🗑️ Löschen** (löscht, verwarnt und bannt wie im Normalbetrieb) und **✅ Nicht löschen**.
+Jeder in der Meldungs-Gruppe darf tippen. Telegram lässt Bots nur Nachrichten löschen, die
+jünger als 48 Stunden sind.
 
 ## Was er speichert und was nicht
 
@@ -60,7 +63,7 @@ sonst arbeitet der Bot in jeder Gruppe, in die ihn jemand holt. Für einen Alarm
 dauerhaft ausfällt (z. B. widerrufener Token), in der Unit `OnFailure=` auf eine eigene
 Alarm-Unit setzen.
 
-Wenn die Testmodus-Meldungen ein paar Tage lang stimmen: in `.env` `DRY_RUN=0` setzen und den
+Wenn ein paar Tage lang jede Testmodus-Meldung mit „Löschen“ bestätigt wurde: in `.env` `DRY_RUN=0` setzen und den
 Dienst neu starten.
 
 ## Anpassen

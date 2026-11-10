@@ -57,4 +57,24 @@ if calls != want:
     print(f"FAIL handle(): want {want}, got {calls}")
 else:
     print("handle ok")
+
+# test mode: report with two buttons, "Löschen" enforces, "Nicht löschen" and foreign chats do nothing
+sent = []
+bot.tg = lambda method, **p: sent.append((method, p)) or ([{"user": {"id": 1}}] if method == "getChatAdministrators" else True)
+bot.DRY_RUN, bot.REPORT_CHAT_ID = True, "-5"
+bot.handle(db, dict(spam, **{"from": {"id": 3, "first_name": "包嵩"}, "message_id": 9}))
+buttons = [b["callback_data"] for b in sent[-1][1]["reply_markup"]["inline_keyboard"][0]]
+report_msg = {"chat": {"id": -5}, "message_id": 77, "text": "🧪 Testmodus"}
+tap = lambda data, chat=report_msg: bot.on_button(db, {"id": "q", "from": {"id": 1, "first_name": "Frieder"}, "message": chat, "data": data})
+sent.clear(); tap(buttons[1])
+kept = [m for m, _ in sent] == ["answerCallbackQuery", "editMessageText"] and "Bleibt stehen" in sent[-1][1]["text"]
+sent.clear(); tap(buttons[0], dict(report_msg, chat={"id": -6}))
+foreign = [m for m, _ in sent] == ["answerCallbackQuery"]
+sent.clear(); tap(buttons[0])
+deleted = ("deleteMessage", {"chat_id": -100, "message_id": 9}) in sent and "Verwarnung 1/2" in sent[-1][1]["text"]
+if buttons != ["d:-100:9:3", "k:-100:9:3"] or not (kept and foreign and deleted):
+    failed += 1
+    print(f"FAIL buttons: {buttons} kept={kept} foreign={foreign} deleted={deleted}")
+else:
+    print("buttons ok")
 raise SystemExit(1 if failed else 0)

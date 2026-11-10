@@ -6,6 +6,8 @@ Consumers: telegram-anti-spam-bot.service (systemd, runs main()), test_bot.py (i
 Stage 1: rules (Chinese-script ratio, blocklist.txt = spam, suspicious.txt + Cyrillic = unsure).
 Stage 2: messages stage 1 is unsure about go to Claude Haiku, only if ANTHROPIC_API_KEY is set.
 Spam is deleted; after STRIKES_TO_BAN deletions the sender is banned.
+Test mode (DRY_RUN=1): nothing is deleted on its own; the report in REPORT_CHAT_ID carries two
+buttons, "Löschen" (same delete/strike/ban as live mode) and "Nicht löschen".
 The only thing written to disk is (chat_id, user_id, strike count) in SQLite.
 Telegram's Bot API has no method to list a group's members, so this bot cannot export one.
 """
@@ -131,12 +133,13 @@ def tg_error(e):
         return str(e)
 
 
-def report(text, user_id=""):
+def report(text, user_id="", buttons=None):
     # journal gets the headline and user ID only; names and message text go to the admin alone
     log.info("%s (user %s)", text.splitlines()[0], user_id)
     if REPORT_CHAT_ID:
+        extra = {"reply_markup": {"inline_keyboard": [buttons]}} if buttons else {}
         try:
-            tg("sendMessage", chat_id=REPORT_CHAT_ID, text=text, link_preview_options={"is_disabled": True})
+            tg("sendMessage", chat_id=REPORT_CHAT_ID, text=text, link_preview_options={"is_disabled": True}, **extra)
         except (urllib.error.URLError, OSError) as e:
             log.warning("Meldung an REPORT_CHAT_ID fehlgeschlagen: %s", e)
 
@@ -160,6 +163,50 @@ def add_strike(db, chat_id, user_id):
     )
     db.commit()
     return db.execute("SELECT count FROM strikes WHERE chat_id = ? AND user_id = ?", (chat_id, user_id)).fetchone()[0]
+
+
+def enforce(db, chat_id, uid, message_id):
+    """Delete, strike, ban on STRIKES_TO_BAN. Returns the outcome line, None for a post-ban burst."""
+    try:
+        tg("deleteMessage", chat_id=chat_id, message_id=message_id)
+    except urllib.error.HTTPError as e:
+        err = tg_error(e)
+        if "not found" not in err:  # already gone (Rose, a human admin): still spam, still a strike
+            return f"⚠️ Löschen fehlgeschlagen: {err}\nHat der Bot das Admin-Recht „Nachrichten löschen“? (Telegram erlaubt es nur 48 h lang)"
+    if time.time() - _banned.get((chat_id, uid), 0) < 300:  # burst sent before the ban took effect: delete, don't re-strike
+        return None
+    # ponytail: strikes never expire; add a time window if regulars ever get banned for old strikes
+    strikes = add_strike(db, chat_id, uid)
+    if strikes < STRIKES_TO_BAN:
+        return f"🗑️ Gelöscht, Verwarnung {strikes}/{STRIKES_TO_BAN}"
+    try:
+        tg("banChatMember", chat_id=chat_id, user_id=uid)
+    except urllib.error.HTTPError as e:
+        return f"⚠️ Gelöscht, aber Bann fehlgeschlagen: {tg_error(e)}\nHat der Bot das Admin-Recht „Nutzer sperren“?"
+    # reset, so a user the admin unbans starts from zero
+    _banned[(chat_id, uid)] = time.time()
+    db.execute("DELETE FROM strikes WHERE chat_id = ? AND user_id = ?", (chat_id, uid))
+    db.commit()
+    return f"⛔ Gelöscht und dauerhaft gebannt ({strikes}. Verstoß)"
+
+
+def on_button(db, cq):
+    """A tap on "Löschen" / "Nicht löschen" under a test-mode report."""
+    m = cq.get("message") or {}
+    tg("answerCallbackQuery", callback_query_id=cq["id"])
+    # only buttons in the report chat count: everyone in that group is trusted to moderate
+    if not REPORT_CHAT_ID or str(m.get("chat", {}).get("id")) != REPORT_CHAT_ID:
+        return
+    action, chat_id, msg_id, uid = cq.get("data", "").split(":")
+    chat_id, msg_id, uid = int(chat_id), int(msg_id), int(uid)
+    if ALLOWED_CHATS and chat_id not in ALLOWED_CHATS:
+        return
+    who = cq["from"].get("first_name", "?")
+    out = (enforce(db, chat_id, uid, msg_id) or "🗑️ Gelöscht") if action == "d" else "✅ Bleibt stehen"
+    log.info("Knopf %s von user %s: %s (user %s)", action, cq["from"]["id"], out.splitlines()[0], uid)
+    # editing without reply_markup removes the buttons, so nobody taps twice
+    tg("editMessageText", chat_id=m["chat"]["id"], message_id=m["message_id"],
+       text=f"{m.get('text', '')}\n\n{out} ({who})", link_preview_options={"is_disabled": True})
 
 
 def handle(db, msg):
@@ -194,31 +241,13 @@ def handle(db, msg):
     uid = user["id"]
     log.info("Spam erkannt: chat %s, user %s, %s", chat["id"], uid, reason)
     if DRY_RUN:
-        report(f"🧪 Testmodus: würde diese Nachricht löschen\n{details}", uid)
+        key = f"{chat['id']}:{msg['message_id']}:{uid}"  # <= 64 bytes, Telegram's callback_data limit
+        report(f"🧪 Testmodus: würde diese Nachricht löschen\n{details}", uid,
+               [{"text": "🗑️ Löschen", "callback_data": f"d:{key}"}, {"text": "✅ Nicht löschen", "callback_data": f"k:{key}"}])
         return
-
-    try:
-        tg("deleteMessage", chat_id=chat["id"], message_id=msg["message_id"])
-        if time.time() - _banned.get((chat["id"], uid), 0) < 300:  # burst sent before the ban took effect: delete, don't re-strike
-            return
-    except urllib.error.HTTPError as e:
-        report(f"⚠️ Löschen fehlgeschlagen: {tg_error(e)}\nHat der Bot das Admin-Recht „Nachrichten löschen“?\n{details}", uid)
-        return
-    # ponytail: strikes never expire; add a time window if regulars ever get banned for old strikes
-    strikes = add_strike(db, chat["id"], user["id"])
-    if strikes < STRIKES_TO_BAN:
-        report(f"🗑️ Gelöscht, Verwarnung {strikes}/{STRIKES_TO_BAN}\n{details}", uid)
-        return
-    try:
-        tg("banChatMember", chat_id=chat["id"], user_id=uid)
-    except urllib.error.HTTPError as e:
-        report(f"⚠️ Gelöscht, aber Bann fehlgeschlagen: {tg_error(e)}\nHat der Bot das Admin-Recht „Nutzer sperren“?\n{details}", uid)
-        return
-    # reset, so a user the admin unbans starts from zero
-    _banned[(chat["id"], uid)] = time.time()
-    db.execute("DELETE FROM strikes WHERE chat_id = ? AND user_id = ?", (chat["id"], user["id"]))
-    db.commit()
-    report(f"⛔ Gelöscht und dauerhaft gebannt ({strikes}. Verstoß)\n{details}", uid)
+    out = enforce(db, chat["id"], uid, msg["message_id"])
+    if out:
+        report(f"{out}\n{details}", uid)
 
 
 def main():
@@ -246,7 +275,7 @@ def main():
     offset = 0
     while True:
         try:
-            updates = tg("getUpdates", offset=offset, timeout=50, allowed_updates=["message", "edited_message"])
+            updates = tg("getUpdates", offset=offset, timeout=50, allowed_updates=["message", "edited_message", "callback_query"])
         except urllib.error.HTTPError as e:
             if e.code in (401, 404):
                 raise SystemExit(f"Bot-Token ungültig oder widerrufen (HTTP {e.code})")
@@ -260,11 +289,13 @@ def main():
         for upd in updates:
             offset = upd["update_id"] + 1
             msg = upd.get("message") or upd.get("edited_message")
-            if msg:
-                try:
+            try:
+                if upd.get("callback_query"):
+                    on_button(db, upd["callback_query"])
+                elif msg:
                     handle(db, msg)
-                except Exception:
-                    log.exception("Fehler bei update %s", upd["update_id"])
+            except Exception:
+                log.exception("Fehler bei update %s", upd["update_id"])
 
 
 if __name__ == "__main__":
