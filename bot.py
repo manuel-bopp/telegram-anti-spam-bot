@@ -9,6 +9,8 @@ Spam is deleted; after STRIKES_TO_BAN deletions the sender is banned.
 Every action is a short card in REPORT_CHAT_ID. Live: buttons Confirm / Revert (unban, strike back,
 the bot re-posts the text) / Block User. Test mode (DRY_RUN=1): nothing is deleted on its own, the
 card has "Löschen" (same delete/strike/ban as live mode) and "Nicht löschen".
+Join captcha (CAPTCHA_MINUTES > 0): a new member is muted until they tap "Ich bin kein Bot" under
+the bot's greeting; no tap in time = removed (may rejoin). Pending joins live in SQLite.
 In REPORT_CHAT_ID: /blocklist, /block <muster>, /unblock <muster> (extra patterns, kept next to DB_PATH).
 The only thing written to disk is (chat_id, user_id, strike count) in SQLite.
 Telegram's Bot API has no method to list a group's members, so this bot cannot export one.
@@ -32,6 +34,7 @@ TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 DRY_RUN = os.environ.get("DRY_RUN", "1") != "0"
 STRIKES_TO_BAN = int(os.environ.get("STRIKES_TO_BAN", "2"))
 REPORT_CHAT_ID = os.environ.get("REPORT_CHAT_ID", "")
+CAPTCHA_MINUTES = int(os.environ.get("CAPTCHA_MINUTES", "0"))  # 0 = no join captcha
 ALLOWED_CHATS = {int(x) for x in os.environ.get("ALLOWED_CHAT_IDS", "").split(",") if x.strip()}
 DB_PATH = os.environ.get("DB_PATH", str(HERE / "strikes.db"))
 LLM_MODEL = os.environ.get("LLM_MODEL", "claude-haiku-5-5")
@@ -242,8 +245,83 @@ def revert(db, chat_id, uid, card):
     return "↩️ Rückgängig gemacht (entsperrt, Nachricht neu gepostet)"
 
 
+MUTED = {"can_send_messages": False}
+
+
+def on_join(db, chat_id, user, join_msg_id=None):
+    """Mute a new member and greet them with the captcha button. Called for join messages and chat_member updates."""
+    uid = user["id"]
+    if user.get("is_bot") or db.execute("SELECT 1 FROM pending WHERE chat_id = ? AND user_id = ?", (chat_id, uid)).fetchone():
+        return
+    try:
+        tg("restrictChatMember", chat_id=chat_id, user_id=uid, permissions=MUTED)
+    except urllib.error.HTTPError as e:  # e.g. an admin joining, or the bot lacks "Nutzer sperren"
+        log.warning("Captcha: stummschalten fehlgeschlagen für user %s: %s", uid, tg_error(e))
+        return
+    if join_msg_id:
+        try:  # the "X ist beigetreten" line: one less line in the group
+            tg("deleteMessage", chat_id=chat_id, message_id=join_msg_id)
+        except urllib.error.HTTPError:
+            pass
+    name = user.get("first_name") or "Hallo"
+    sent = tg("sendMessage", chat_id=chat_id,
+              text=f"👋 {name}, willkommen! Bitte tippe in den nächsten {CAPTCHA_MINUTES} Minuten auf den Knopf, "
+                   "dann kannst du schreiben.",
+              reply_markup={"inline_keyboard": [[{"text": "✅ Ich bin kein Bot", "callback_data": f"v:{chat_id}:{uid}"}]]})
+    db.execute("INSERT OR REPLACE INTO pending VALUES (?, ?, ?, ?)",
+               (chat_id, uid, sent["message_id"], time.time() + 60 * CAPTCHA_MINUTES))
+    db.commit()
+    log.info("Captcha gestellt: chat %s, user %s", chat_id, uid)
+
+
+def on_captcha(db, cq):
+    """A tap on "Ich bin kein Bot": only the new member themselves can solve it."""
+    _, chat_id, uid = cq["data"].split(":")
+    chat_id, uid = int(chat_id), int(uid)
+    row = db.execute("SELECT msg_id FROM pending WHERE chat_id = ? AND user_id = ?", (chat_id, uid)).fetchone()
+    if cq["from"]["id"] != uid or not row:
+        tg("answerCallbackQuery", callback_query_id=cq["id"], text="Dieser Knopf ist nicht für dich.")
+        return
+    # back to the group's normal rights
+    perms = tg("getChat", chat_id=chat_id).get("permissions") or {"can_send_messages": True}
+    tg("restrictChatMember", chat_id=chat_id, user_id=uid, permissions=perms)
+    tg("answerCallbackQuery", callback_query_id=cq["id"], text="Danke, du kannst jetzt schreiben.")
+    expire_prompt(db, chat_id, uid, row[0])
+    log.info("Captcha gelöst: chat %s, user %s", chat_id, uid)
+
+
+def expire_prompt(db, chat_id, uid, msg_id):
+    try:
+        tg("deleteMessage", chat_id=chat_id, message_id=msg_id)
+    except urllib.error.HTTPError:
+        pass
+    db.execute("DELETE FROM pending WHERE chat_id = ? AND user_id = ?", (chat_id, uid))
+    db.commit()
+
+
+def sweep_captchas(db):
+    """Remove members who did not tap in time (ban + unban = kick: they may join again)."""
+    for chat_id, uid, msg_id in db.execute("SELECT chat_id, user_id, msg_id FROM pending WHERE deadline < ?",
+                                           (time.time(),)).fetchall():
+        try:
+            tg("banChatMember", chat_id=chat_id, user_id=uid, until_date=int(time.time()) + 60)
+        except urllib.error.HTTPError as e:
+            log.warning("Captcha: entfernen fehlgeschlagen für user %s: %s", uid, tg_error(e))
+        expire_prompt(db, chat_id, uid, msg_id)
+        log.info("Captcha abgelaufen, entfernt: chat %s, user %s", chat_id, uid)
+
+
+def on_member(db, upd):
+    """chat_member update: catches joins even when the group hides join messages."""
+    old, new = upd["old_chat_member"]["status"], upd["new_chat_member"]["status"]
+    if CAPTCHA_MINUTES and new == "member" and old in ("left", "kicked") and upd["chat"]["id"] in ALLOWED_CHATS:
+        on_join(db, upd["chat"]["id"], upd["new_chat_member"]["user"])
+
+
 def on_button(db, cq):
     """A tap under a card: live c/r/b (Confirm, Revert, Block User), test mode d/k (Löschen, Nicht löschen)."""
+    if cq.get("data", "").startswith("v:"):
+        return on_captcha(db, cq)
     m = cq.get("message") or {}
     try:
         tg("answerCallbackQuery", callback_query_id=cq["id"])
@@ -320,6 +398,10 @@ def handle(db, msg):
         return
     if ALLOWED_CHATS and chat["id"] not in ALLOWED_CHATS:
         return
+    if CAPTCHA_MINUTES and msg.get("new_chat_members"):
+        for member in msg["new_chat_members"]:
+            on_join(db, chat["id"], member, msg["message_id"])
+        return
     # ponytail: posts sent as a channel (sender_chat) are skipped; banChatSenderChat if that becomes a spam route
     if not user or user.get("is_bot") or user["id"] in SERVICE_IDS or msg.get("sender_chat"):
         return
@@ -362,6 +444,8 @@ def main():
     db = sqlite3.connect(DB_PATH)
     db.execute("CREATE TABLE IF NOT EXISTS strikes (chat_id INTEGER, user_id INTEGER, count INTEGER, "
                "PRIMARY KEY (chat_id, user_id))")
+    db.execute("CREATE TABLE IF NOT EXISTS pending (chat_id INTEGER, user_id INTEGER, msg_id INTEGER, deadline REAL, "
+               "PRIMARY KEY (chat_id, user_id))")
     while True:
         try:
             me = tg("getMe")
@@ -378,7 +462,7 @@ def main():
     offset = 0
     while True:
         try:
-            updates = tg("getUpdates", offset=offset, timeout=50, allowed_updates=["message", "edited_message", "callback_query"])
+            updates = tg("getUpdates", offset=offset, timeout=50, allowed_updates=["message", "edited_message", "callback_query", "chat_member"])
         except urllib.error.HTTPError as e:
             if e.code in (401, 404):
                 raise SystemExit(f"Bot-Token ungültig oder widerrufen (HTTP {e.code})")
@@ -395,10 +479,16 @@ def main():
             try:
                 if upd.get("callback_query"):
                     on_button(db, upd["callback_query"])
+                elif upd.get("chat_member"):
+                    on_member(db, upd["chat_member"])
                 elif msg:
                     handle(db, msg)
             except Exception:
                 log.exception("Fehler bei update %s", upd["update_id"])
+        try:
+            sweep_captchas(db)
+        except Exception:
+            log.exception("Fehler beim Captcha-Aufräumen")
 
 
 if __name__ == "__main__":

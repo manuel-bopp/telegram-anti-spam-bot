@@ -128,4 +128,25 @@ if not (added and removed and listed):
     print(f"FAIL commands: added={added} removed={removed} listed={listed}")
 else:
     print("commands ok")
+# join captcha: muted + greeted; a foreign tap does nothing, the joiner's tap unmutes; no tap = kicked
+bot.CAPTCHA_MINUTES, bot.ALLOWED_CHATS = 5, {-100}
+db.execute("CREATE TABLE pending (chat_id INTEGER, user_id INTEGER, msg_id INTEGER, deadline REAL, PRIMARY KEY (chat_id, user_id))")
+bot.tg = lambda method, **p: sent.append((method, p)) or ({"message_id": 50} if method == "sendMessage" else {"permissions": {"can_send_messages": True}} if method == "getChat" else True)
+sent.clear(); bot.handle(db, {"chat": group, "from": {"id": 7}, "message_id": 20, "new_chat_members": [{"id": 7, "first_name": "Neu"}]})
+greeted = [m for m, _ in sent] == ["restrictChatMember", "deleteMessage", "sendMessage"] and sent[0][1]["permissions"] == {"can_send_messages": False}
+captcha = sent[-1][1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+sent.clear(); bot.on_button(db, {"id": "q", "from": {"id": 8}, "message": {"chat": group}, "data": captcha})
+foreign = [m for m, _ in sent] == ["answerCallbackQuery"]
+sent.clear(); bot.on_button(db, {"id": "q", "from": {"id": 7}, "message": {"chat": group}, "data": captcha})
+solved = ("restrictChatMember", {"chat_id": -100, "user_id": 7, "permissions": {"can_send_messages": True}}) in sent \
+    and db.execute("SELECT COUNT(*) FROM pending").fetchone()[0] == 0
+bot.on_member(db, {"chat": group, "old_chat_member": {"status": "left"}, "new_chat_member": {"status": "member", "user": {"id": 9}}})
+db.execute("UPDATE pending SET deadline = 0")
+sent.clear(); bot.sweep_captchas(db)
+kicked = [m for m, _ in sent] == ["banChatMember", "deleteMessage"] and db.execute("SELECT COUNT(*) FROM pending").fetchone()[0] == 0
+if not (greeted and foreign and solved and kicked):
+    failed += 1
+    print(f"FAIL captcha: greeted={greeted} foreign={foreign} solved={solved} kicked={kicked}")
+else:
+    print("captcha ok")
 raise SystemExit(1 if failed else 0)

@@ -36,6 +36,10 @@ aufgehoben, der Bot postet den Text neu in die Gruppe, denn Telegram kann Gelös
 wiederherstellen) und **⛔ Block User** (sofort dauerhaft sperren). Jeder in der Meldungs-Gruppe
 darf tippen.
 
+**Beitritts-Captcha** (`CAPTCHA_MINUTES`, z. B. 5; 0 = aus): Neue Mitglieder sind stumm, bis sie
+unter der Begrüßung des Bots auf **✅ Ich bin kein Bot** tippen. Wer das nicht in der Zeit schafft,
+wird entfernt und kann neu beitreten. Begrüßung und Beitrittszeile löscht der Bot danach wieder.
+
 **Befehle in der Meldungs-Gruppe:** `/blocklist` zeigt die Liste, `/block <wort>` sperrt ein Wort
 ab sofort, `/unblock <wort>` nimmt es wieder raus (`*` = beliebige Zeichen, z. B. `casino*`). Diese
 Ergänzungen liegen in `blocklist-extra.txt` neben der Datenbank; `blocklist.txt` selbst ändert man im Repo.
