@@ -14,6 +14,8 @@ EnvironmentFile=/opt/telegram-anti-spam-bot/.env
 Environment=DB_PATH=/var/lib/telegram-anti-spam-bot/strikes.db
 ExecStart=/opt/telegram-anti-spam-bot/.venv/bin/python bot.py
 Restart=always
+# systemd >= 254: a healed crash fires no OnFailure, only the final give-up does (older systemd ignores it)
+RestartMode=direct
 RestartSec=10
 DynamicUser=yes
 StateDirectory=telegram-anti-spam-bot

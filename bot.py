@@ -146,7 +146,7 @@ def report(text, user_id="", buttons=None):
 
 _admins = {}
 _banned = {}  # (chat, user) -> ban time; in memory only, a restart just forgets the burst window
-# (chat, message) already deleted via a button: a 2nd tap, a 2nd admin or the report of an edit never strikes twice
+# (chat, message) already deleted: a 2nd tap, a 2nd admin or an edit of the same message never strikes twice
 # ponytail: in memory, grows by a few ids a day; a restart forgets it
 _enforced = set()
 
@@ -169,7 +169,9 @@ def add_strike(db, chat_id, user_id):
 
 
 def enforce(db, chat_id, uid, message_id):
-    """Delete, strike, ban on STRIKES_TO_BAN. Returns the outcome line, None for a post-ban burst."""
+    """Delete, strike, ban on STRIKES_TO_BAN. Returns the outcome line, None for a post-ban burst or a repeat."""
+    if (chat_id, message_id) in _enforced:  # e.g. a message and its edit in one update batch
+        return None
     try:
         tg("deleteMessage", chat_id=chat_id, message_id=message_id)
     except urllib.error.HTTPError as e:
@@ -197,7 +199,10 @@ def enforce(db, chat_id, uid, message_id):
 def on_button(db, cq):
     """A tap on "Löschen" / "Nicht löschen" under a test-mode report."""
     m = cq.get("message") or {}
-    tg("answerCallbackQuery", callback_query_id=cq["id"])
+    try:
+        tg("answerCallbackQuery", callback_query_id=cq["id"])
+    except urllib.error.HTTPError:  # tap queued while the bot was down: too old to answer, still act on it
+        pass
     # only buttons in the report chat count: everyone in that group is trusted to moderate
     if not REPORT_CHAT_ID or str(m.get("chat", {}).get("id")) != REPORT_CHAT_ID:
         return

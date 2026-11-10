@@ -65,7 +65,7 @@ bot.DRY_RUN, bot.REPORT_CHAT_ID = True, "-5"
 bot.handle(db, dict(spam, **{"from": {"id": 3, "first_name": "包嵩"}, "message_id": 9}))
 buttons = [b["callback_data"] for b in sent[-1][1]["reply_markup"]["inline_keyboard"][0]]
 report_msg = {"chat": {"id": -5}, "message_id": 77, "text": "🧪 Testmodus"}
-tap = lambda data, chat=report_msg: bot.on_button(db, {"id": "q", "from": {"id": 1, "first_name": "Frieder"}, "message": chat, "data": data})
+tap = lambda data, chat=report_msg: bot.on_button(db, {"id": "q", "from": {"id": 1, "first_name": "Admin"}, "message": chat, "data": data})
 sent.clear(); tap(buttons[1])
 kept = [m for m, _ in sent] == ["answerCallbackQuery", "editMessageText"] and "Bleibt stehen" in sent[-1][1]["text"]
 sent.clear(); tap(buttons[0], dict(report_msg, chat={"id": -6}))
