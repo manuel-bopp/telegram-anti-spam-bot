@@ -1,7 +1,7 @@
 # Telegram Anti-Spam-Bot
 
 Created: 2026-11-03 15:50 · claude-opus-5-5 · direct
-Last updated: 2026-11-10 18:48 · claude-opus-5-5
+Last updated: 2026-11-10 19:20 · claude-opus-5-5
 
 Kleiner Bot, der Spam in Telegram-Gruppen löscht und Wiederholungstäter bannt. Gebaut für eine
 Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt.
@@ -10,10 +10,11 @@ Stuttgarter Gruppe, in der Rose die chinesischen Spam-Nachrichten nicht erwischt
 
 1. **Stufe 1, Regeln** (`bot.py`, `classify()`):
    - Nachricht mehr als zur Hälfte in chinesischer Schrift: Spam.
-   - Treffer in `blocklist.txt` (die zwei Jobangebot-Phrasen aus der bisherigen Rose-Liste): Spam.
-   - Treffer in `suspicious.txt` (der Rest der Rose-Liste: Kredit, impfen, Bitcoin, оплата …,
-     dazu Links und `$`),
-     kyrillische Schrift, chinesischer Anzeigename: *unsicher*.
+   - Treffer in `blocklist.txt`: Spam. Drin sind die komplette bisherige Rose-Liste (Kredit,
+     impfen, Bitcoin, оплата, Links mit `http`/`www`/`t.me`, `$` …) und dazu Jobangebote, Krypto,
+     Drogen, Waffen, Gewalt und Porno.
+   - Treffer in `suspicious.txt` (derzeit leer), kyrillische Schrift, chinesischer Anzeigename:
+     *unsicher*.
 2. **Stufe 2, KI** (nur wenn `ANTHROPIC_API_KEY` gesetzt ist): Nur die *unsicheren*
    Nachrichten gehen an Claude Haiku, das mit SPAM oder OK antwortet. Ohne Schlüssel bleiben
    unsichere Nachrichten stehen. An die KI geht nur der Nachrichtentext, kein Name, keine ID.
